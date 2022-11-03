@@ -1,0 +1,133 @@
+name: Release
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: "!startsWith(github.ref, 'refs/tags/')"
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          ref: "main"
+          fetch-depth: 0
+
+      - name: Create package.json
+        run: |
+          echo "{\"name\": \"smf-mod\",\"version\":\"0.0.0\",\"description\":\"An SMF mod.\",\"private\":true}" > package.json
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+
+      - name: Install semantic release plugin
+        run: |
+          npm install --save-dev semantic-release-export-data conventional-changelog-conventionalcommits
+      
+      - name: Create .releaserc
+        env:
+          REPO_URL: ${{ format('https://github.com/{0}.git', github.repository) }}
+        run: |
+          echo "{\"branches\":[\"main\"],\"plugins\":[[\"@semantic-release/commit-analyzer\",{\"preset\":\"conventionalcommits\",\"releaseRules\":[{\"type\":\"enhancement\",\"release\":\"minor\"}]}], \"semantic-release-export-data\"],\"repositoryUrl\":\"$REPO_URL\",\"tagFormat\":\"\${version}\"}" > .releaserc
+      
+      - name: Get new version
+        id: newVersion
+        run: npx --yes semantic-release --branches main --dry-run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update manifest.json version
+        if: ${{ steps.newVersion.outputs.new-release-version }}
+        uses: jossef/action-set-json-field@v2
+        with:
+          file: "manifest.json"
+          field: "version"
+          value: ${{ steps.newVersion.outputs.new-release-version }}
+
+      - name: Update manifest.json updateCheck
+        if: ${{ steps.newVersion.outputs.new-release-version }}
+        uses: jossef/action-set-json-field@v2
+        with:
+          file: "manifest.json"
+          field: "updateCheck"
+          value: ${{ format('https://github.com/{0}/releases/latest/download/updates.json', github.repository) }}
+      
+      - name: Create tag
+        if: ${{ steps.newVersion.outputs.new-release-version }}
+        uses: tvdias/github-tagger@v0.0.2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.newVersion.outputs.new-release-version }}
+
+      - name: Generate changelog
+        if: ${{ steps.newVersion.outputs.new-release-version }}
+        id: changelog
+        uses: loopwerk/tag-changelog@v1.0.4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          exclude_types: other,docs,chore,build,amend,refactor
+
+      - name: Get mod ID
+        if: ${{ steps.newVersion.outputs.new-release-version }}
+        id: modID
+        uses: notiz-dev/github-action-json-property@release
+        with:
+            path: 'manifest.json'
+            prop_path: 'id'
+
+      - name: Copy files
+        if: ${{ steps.newVersion.outputs.new-release-version }}
+        env:
+          TARGETDIR: ${{ steps.modID.outputs.prop }}
+        run: |
+          mkdir $TARGETDIR
+          for file in *;do test "$file" != "$TARGETDIR" && cp -r "$file" "$TARGETDIR/";done
+          rm -rf "$TARGETDIR/node_modules"
+          rm "$TARGETDIR/package.json" "$TARGETDIR/package-lock.json" "$TARGETDIR/README.md"
+
+      - name: Create ZIP
+        if: ${{ steps.newVersion.outputs.new-release-version }}
+        uses: TheDoctor0/zip-release@4fb9e4ff72847dd3d1c111cf63834e353ed7cb3d
+        with:
+          filename: mod.framework.zip
+          path: ${{ steps.modID.outputs.prop }}
+
+      - name: Create updates.json
+        if: ${{ steps.newVersion.outputs.new-release-version }}
+        env:
+          VERSION: ${{ toJSON(steps.newVersion.outputs.new-release-version) }}
+          CHANGELOG: ${{ toJSON(steps.changelog.outputs.changes) }}
+          URL: ${{ format('https://github.com/{0}/releases/latest/download/mod.framework.zip', github.repository) }}
+        run: |
+          echo "{\"version\":$VERSION,\"changelog\":$CHANGELOG,\"url\":\"$URL\"}" > updates.json
+
+      - name: Release
+        if: ${{ steps.newVersion.outputs.new-release-version }}
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ steps.newVersion.outputs.new-release-version }}
+          body: ${{ steps.changelog.outputs.changes }}
+          tag_name: ${{ steps.newVersion.outputs.new-release-version }}
+          repository: ${{ github.repository }}
+          files: |
+            mod.framework.zip
+            updates.json
+      
+      - name: Remove files
+        if: ${{ steps.newVersion.outputs.new-release-version }}
+        env:
+          ZIPDIR: ${{ steps.modID.outputs.prop }}
+        run: |
+          rm mod.framework.zip updates.json
+          rm -rf $ZIPDIR
+      
+      - name: Commit changes
+        if: ${{ steps.newVersion.outputs.new-release-version }}
+        uses: EndBug/add-and-commit@v9.1.0
+        with:
+          default_author: github_actions
+          message: "chore: post-update"

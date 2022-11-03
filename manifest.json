@@ -1,0 +1,10 @@
+{
+  "version": "0.1.0",
+  "id": "YourPreferredAlias.AnIDForTheMod",
+  "name": "Incredible Mod",
+  "description": "A truly amazing mod",
+  "authors": [
+    "Your Preferred Alias"
+  ],
+  "frameworkVersion": "2.1.5"
+}
