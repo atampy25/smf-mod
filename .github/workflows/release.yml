@@ -15,6 +15,11 @@ jobs:
           ref: "main"
           fetch-depth: 0
 
+      - name: Prettier Action
+        uses: creyD/prettier_action@v4.2
+        with:
+          prettier_options: --write **/*.json --end-of-line crlf
+
       - name: Create package.json
         run: |
           echo "{\"name\": \"smf-mod\",\"version\":\"0.0.0\",\"description\":\"An SMF mod.\",\"private\":true}" > package.json
