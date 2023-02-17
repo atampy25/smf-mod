@@ -1,4 +1,5 @@
 {
+	"$schema": "https://raw.githubusercontent.com/bennett-sh/schemas/main/hm/smf-mod.v2.schema.json",
 	"version": "0.1.0",
 	"id": "YourPreferredAlias.AnIDForTheMod",
 	"name": "Incredible Mod",
